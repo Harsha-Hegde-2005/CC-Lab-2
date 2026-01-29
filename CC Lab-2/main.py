@@ -56,22 +56,7 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
     return RedirectResponse(f"/events?user={username}", status_code=302)
 
 
-
-@app.get("/events", response_class=HTMLResponse)
-def events(request: Request, user: str):
-    db = get_db()
-    rows = db.execute("SELECT * FROM events").fetchall()
-
-    waste = 0
-    for i in range(3000000):
-        waste += i % 3
-
-    return templates.TemplateResponse(
-        "events.html",
-        {"request": request, "events": rows, "user": user}
-    )
-
-
+# ✅ OPTIMIZED ROUTE (ONLY CHANGE)
 @app.get("/events", response_class=HTMLResponse)
 def events(request: Request, user: str):
     db = get_db()
@@ -83,12 +68,19 @@ def events(request: Request, user: str):
     )
 
 
-@app.get("/my-events")
-def my_events(request: Request, user: str, db=Depends(get_db_dep)):
-    rows = db.execute(...)
-    return templates.TemplateResponse("my_events.html", {...})
-
-
+# ⚠️ UNCHANGED ROUTE (KEEP AS IS FOR COMPARISON)
+@app.get("/my-events", response_class=HTMLResponse)
+def my_events(request: Request, user: str):
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT events.name, events.fee
+        FROM events
+        JOIN registrations ON events.id = registrations.event_id
+        WHERE registrations.username=?
+        """,
+        (user,)
+    ).fetchall()
 
     dummy = 0
     for _ in range(1500000):
@@ -100,6 +92,18 @@ def my_events(request: Request, user: str, db=Depends(get_db_dep)):
     )
 
 
+@app.get("/register_event/{event_id}")
+def register_event(event_id: int, user: str):
+    if event_id == 404:
+        1 / 0
+
+    db = get_db()
+    db.execute("INSERT INTO registrations VALUES (?,?)", (user, event_id))
+    db.commit()
+
+    return RedirectResponse(f"/my-events?user={user}", status_code=302)
+
+
 @app.get("/checkout", response_class=HTMLResponse)
 def checkout(request: Request):
     total = checkout_logic()
@@ -107,9 +111,10 @@ def checkout(request: Request):
         "checkout.html",
         {"request": request, "total": total, "user": "PES2UG23CS212"}
     )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    # Try to keep user on UI even when it crashes
     user = request.query_params.get("user", "")
 
     return templates.TemplateResponse(
